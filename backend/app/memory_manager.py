@@ -2,13 +2,12 @@
 
 Talks to Hindsight's REST API with httpx:
   GET  /health
-  GET  /v1/default/banks/{bank}/profile
+  GET  /v1/default/banks/{bank}/config
   POST /v1/default/banks/{bank}/memories          (retain)
   POST /v1/default/banks/{bank}/memories/recall   (recall)
 
-Nothing here ever raises to callers because Hindsight is down:
-store_* return False, search_memories returns available=False
-with the standard notice.
+Nothing here ever raises to callers because Hindsight is down: store_* return
+False, search_memories returns `available=False` with the standard notice.
 """
 
 import hashlib
@@ -32,14 +31,13 @@ from .schemas import MemoryHit
 
 logger = logging.getLogger("sre.memory")
 
+
 HISTORY_UNAVAILABLE_NOTICE = (
     "Historical memory is temporarily unavailable. "
     "This recommendation is based only on the current incident."
 )
 
-NO_HISTORY_NOTICE = (
-    "No relevant historical incident was found in Hindsight memory."
-)
+NO_HISTORY_NOTICE = "No relevant historical incident was found in Hindsight memory."
 
 _INC_RE = re.compile(r"\bINC-\d+\b")
 
@@ -74,13 +72,9 @@ def build_incident_document(r: IncidentRecord) -> str:
         ),
         (
             f"Incident {r.incident_id} service: {r.service}. "
-            f"Infrastructure component: "
-            f"{r.infrastructure_component or 'unknown'}."
+            f"Infrastructure component: {r.infrastructure_component or 'unknown'}."
         ),
-        (
-            f"Incident {r.incident_id} occurred at "
-            f"{ensure_utc(r.timestamp).isoformat()}."
-        ),
+        f"Incident {r.incident_id} occurred at {ensure_utc(r.timestamp).isoformat()}.",
         f"Incident {r.incident_id} error: {r.error}",
         f"Incident {r.incident_id} symptoms: {r.symptoms}",
         f"Incident {r.incident_id} impact: {r.impact}",
@@ -159,30 +153,10 @@ class MemoryManager:
         transport: httpx.AsyncBaseTransport | None = None,
     ):
         self.settings = settings
-        self.repo = (
-            repo
-            if repo is not None
-            else Repository(settings.data_dir)
-        )
-
+        self.repo = repo if repo is not None else Repository(settings.data_dir)
         self.bank_id = settings.hindsight_bank_id
-
-        # This starts False intentionally.
-        # It becomes True after a successful Hindsight check/search.
         self.available = False
-
         self._client: httpx.AsyncClient | None = None
-
-        # Diagnostic logging.
-        # IMPORTANT: Never log the API key itself.
-        logger.info(
-            "HINDSIGHT DEBUG: initialized "
-            "configured=%s api_url=%s bank_id=%s api_key_present=%s",
-            self.configured,
-            settings.hindsight_api_url,
-            self.bank_id,
-            bool(settings.hindsight_api_key),
-        )
 
         if self.configured:
             headers = {
@@ -198,20 +172,6 @@ class MemoryManager:
                 base_url=settings.hindsight_api_url.rstrip("/"),
                 headers=headers,
                 transport=transport,
-            )
-
-            logger.info(
-                "HINDSIGHT DEBUG: HTTP client created "
-                "base_url=%s bank=%s",
-                settings.hindsight_api_url.rstrip("/"),
-                self.bank_id,
-            )
-        else:
-            logger.warning(
-                "HINDSIGHT DEBUG: Hindsight is not configured "
-                "api_url_present=%s bank_id_present=%s",
-                bool(settings.hindsight_api_url),
-                bool(self.bank_id),
             )
 
     @property
@@ -241,18 +201,9 @@ class MemoryManager:
     ) -> httpx.Response:
 
         if not self._client:
-            logger.error(
-                "HINDSIGHT DEBUG: request attempted without HTTP client"
-            )
             raise MemoryUnavailableError(
                 "Hindsight is not configured"
             )
-
-        logger.info(
-            "HINDSIGHT DEBUG: HTTP %s %s",
-            method,
-            path,
-        )
 
         try:
             resp = await self._client.request(
@@ -266,64 +217,27 @@ class MemoryManager:
             )
 
         except httpx.TimeoutException as exc:
-            logger.exception(
-                "HINDSIGHT DEBUG: request timed out "
-                "method=%s path=%s",
-                method,
-                path,
-            )
             raise MemoryUnavailableError(
                 "Hindsight request timed out"
             ) from exc
 
         except httpx.HTTPError as exc:
-            logger.exception(
-                "HINDSIGHT DEBUG: HTTP connection error "
-                "method=%s path=%s error=%s",
-                method,
-                path,
-                type(exc).__name__,
-            )
             raise MemoryUnavailableError(
                 f"Hindsight connection error ({type(exc).__name__})"
             ) from exc
 
-        logger.info(
-            "HINDSIGHT DEBUG: HTTP %s %s -> %s",
-            method,
-            path,
-            resp.status_code,
-        )
-
         if resp.status_code in (401, 403):
-            logger.error(
-                "HINDSIGHT DEBUG: authentication failed "
-                "HTTP %s for %s",
-                resp.status_code,
-                path,
-            )
-
             raise MemoryUnavailableError(
                 "Hindsight authentication failed"
             )
 
         if resp.status_code == 429:
-            logger.error(
-                "HINDSIGHT DEBUG: rate limit reached"
-            )
-
             raise MemoryUnavailableError(
                 "Hindsight rate limit reached"
             )
 
+        # 404 is intentionally allowed because a bank may not exist yet.
         if resp.status_code >= 400 and resp.status_code != 404:
-            logger.error(
-                "HINDSIGHT DEBUG: server returned HTTP %s "
-                "for %s",
-                resp.status_code,
-                path,
-            )
-
             raise MemoryUnavailableError(
                 f"Hindsight returned HTTP {resp.status_code}"
             )
@@ -336,8 +250,7 @@ class MemoryManager:
         """Verify Hindsight is reachable and the memory bank is usable."""
 
         logger.info(
-            "HINDSIGHT DEBUG: starting connection check "
-            "url=%s bank=%s",
+            "HINDSIGHT DEBUG: starting connection check url=%s bank_id=%s",
             self.settings.hindsight_api_url,
             self.bank_id,
         )
@@ -347,28 +260,28 @@ class MemoryManager:
                 "HINDSIGHT DEBUG: calling GET /health"
             )
 
-            resp = await self._request(
+            health_resp = await self._request(
                 "GET",
                 "/health",
             )
 
             logger.info(
-                "HINDSIGHT DEBUG: /health returned HTTP %s",
-                resp.status_code,
+                "HINDSIGHT DEBUG: HTTP GET /health -> %s",
+                health_resp.status_code,
             )
 
         except MemoryUnavailableError as exc:
             self.available = False
 
             logger.exception(
-                "HINDSIGHT DEBUG: /health connection failed: %s",
+                "HINDSIGHT DEBUG: health check failed: %s",
                 exc,
             )
 
             return False
 
         logger.info(
-            "HINDSIGHT DEBUG: checking bank profile %s/profile",
+            "HINDSIGHT DEBUG: checking bank config %s/config",
             self._bank_path,
         )
 
@@ -391,20 +304,43 @@ class MemoryManager:
         return self.available
 
     async def check_memory_bank(self) -> dict:
+        """
+        Check whether the configured Hindsight memory bank exists.
+
+        Hindsight's current endpoint is:
+
+            GET /v1/default/banks/{bank_id}/config
+
+        The old /profile endpoint is no longer used.
+        """
+
         try:
+            logger.info(
+                "HINDSIGHT DEBUG: checking bank config path=%s/config",
+                self._bank_path,
+            )
+
+            # IMPORTANT:
+            # Previously this used:
+            #
+            #     f"{self._bank_path}/profile"
+            #
+            # That endpoint was returning HTTP 410.
+            #
+            # Use /config instead.
             resp = await self._request(
                 "GET",
-                f"{self._bank_path}/profile",
+                f"{self._bank_path}/config",
             )
 
             logger.info(
-                "HINDSIGHT DEBUG: bank profile returned HTTP %s",
+                "HINDSIGHT DEBUG: bank config returned HTTP %s",
                 resp.status_code,
             )
 
         except MemoryUnavailableError as exc:
             logger.exception(
-                "HINDSIGHT DEBUG: bank profile check failed: %s",
+                "HINDSIGHT DEBUG: bank config check failed: %s",
                 exc,
             )
 
@@ -415,20 +351,48 @@ class MemoryManager:
                 "notice": str(exc),
             }
 
-        # 404 => bank is created automatically on first retain
-        result = {
-            "available": True,
-            "bank_id": self.bank_id,
-            "exists": resp.status_code != 404,
-            "notice": None,
-        }
+        # 404 means the bank has not been created yet.
+        # The application can create it when the first memory is retained.
+        if resp.status_code == 404:
+            logger.warning(
+                "HINDSIGHT DEBUG: bank does not exist yet bank=%s",
+                self.bank_id,
+            )
 
-        logger.info(
-            "HINDSIGHT DEBUG: bank status=%s",
-            result,
+            return {
+                "available": True,
+                "bank_id": self.bank_id,
+                "exists": False,
+                "notice": "Hindsight bank does not exist yet",
+            }
+
+        # 200 means the bank/config endpoint is working.
+        if resp.status_code == 200:
+            logger.info(
+                "HINDSIGHT DEBUG: bank config check successful bank=%s",
+                self.bank_id,
+            )
+
+            return {
+                "available": True,
+                "bank_id": self.bank_id,
+                "exists": True,
+                "notice": None,
+            }
+
+        # This should normally not be reached because _request()
+        # converts other >=400 responses into MemoryUnavailableError.
+        logger.error(
+            "HINDSIGHT DEBUG: unexpected bank config HTTP %s",
+            resp.status_code,
         )
 
-        return result
+        return {
+            "available": False,
+            "bank_id": self.bank_id,
+            "exists": False,
+            "notice": f"Hindsight returned HTTP {resp.status_code}",
+        }
 
     # ------------------------------------------------------------------ write
 
@@ -455,26 +419,18 @@ class MemoryManager:
             item["timestamp"] = timestamp
 
         try:
-            resp = await self._request(
+            await self._request(
                 "POST",
                 f"{self._bank_path}/memories",
                 json={"items": [item]},
                 timeout=60,
             )
 
-            logger.info(
-                "HINDSIGHT DEBUG: retain succeeded "
-                "document_id=%s HTTP=%s",
-                document_id,
-                resp.status_code,
-            )
-
             return True
 
         except MemoryUnavailableError as exc:
-            logger.exception(
-                "HINDSIGHT DEBUG: retain failed "
-                "document_id=%s error=%s",
+            logger.warning(
+                "Hindsight retain failed (%s): %s",
                 document_id,
                 exc,
             )
@@ -526,7 +482,9 @@ class MemoryManager:
                 + record.tags
             ),
             metadata=self._meta(record, "incident"),
-            timestamp=ensure_utc(record.timestamp).isoformat(),
+            timestamp=ensure_utc(
+                record.timestamp
+            ).isoformat(),
         )
 
         record.memory_synced = ok
@@ -547,8 +505,7 @@ class MemoryManager:
     ) -> bool:
 
         text = (
-            f"Engineer feedback for incident "
-            f"{record.incident_id} "
+            f"Engineer feedback for incident {record.incident_id} "
             f"({record.title}, service {record.service}): "
             f"the recommendation was "
             f"{'useful' if fb.useful else 'not useful'} "
@@ -588,13 +545,10 @@ class MemoryManager:
     ) -> bool:
 
         text = (
-            f"Successful fix for incident "
-            f"{record.incident_id} "
+            f"Successful fix for incident {record.incident_id} "
             f"({record.title}, service {record.service}, "
-            f"error {record.error}): "
-            f"{action}. {notes} "
-            f"Root cause: "
-            f"{record.root_cause or 'not stated'}."
+            f"error {record.error}): {action}. {notes} "
+            f"Root cause: {record.root_cause or 'not stated'}."
         )
 
         return await self._retain(
@@ -624,8 +578,7 @@ class MemoryManager:
             f"Failed troubleshooting attempt for incident "
             f"{record.incident_id} "
             f"({record.title}, service {record.service}, "
-            f"error {record.error}): "
-            f"{action}. "
+            f"error {record.error}): {action}. "
             f"This did not resolve the issue. {notes}"
         )
 
@@ -657,16 +610,15 @@ class MemoryManager:
         inc = rb.incident_id or "unlinked"
 
         text = (
-            f"Rollback event {rb.rollback_id} "
-            f"for incident {inc}: deployment "
-            f"{rb.version or rb.deployment_id} "
+            f"Rollback event {rb.rollback_id} for incident {inc}: "
+            f"deployment {rb.version or rb.deployment_id} "
             f"of service {rb.service or 'unknown'} "
             f"({rb.environment or 'unknown'}) was rolled back. "
             f"Rollback status: {rb.status}. "
             f"Result: {rb.result}. "
             f"Reason: {rb.reason}. "
-            f"Whether the incident itself was resolved "
-            f"must be confirmed by engineer feedback."
+            f"Whether the incident itself was resolved must be "
+            f"confirmed by engineer feedback."
         )
 
         tags = [
@@ -686,6 +638,7 @@ class MemoryManager:
             tags.append(
                 f"incident:{rb.incident_id}"
             )
+
             meta["incident_id"] = rb.incident_id
 
         ok = await self._retain(
@@ -721,11 +674,7 @@ class MemoryManager:
             desc="; ".join(
                 f"{k}={v}"
                 for k, v in summary.items()
-                if k not in {
-                    "kind",
-                    "repository",
-                }
-                and v
+                if k not in {"kind", "repository"} and v
             ),
         )
 
@@ -751,7 +700,10 @@ class MemoryManager:
         )
 
     async def sync_pending(self) -> int:
-        """Push records that never reached Hindsight (e.g. it was down)."""
+        """
+        Push records that never reached Hindsight
+        (e.g. it was down). Stops at first failure.
+        """
 
         done = 0
 
@@ -777,13 +729,6 @@ class MemoryManager:
         limit: int = 8,
     ) -> MemorySearchResult:
 
-        logger.info(
-            "HINDSIGHT DEBUG: starting memory recall "
-            "query=%s limit=%d",
-            query,
-            limit,
-        )
-
         try:
             resp = await self._request(
                 "POST",
@@ -795,19 +740,8 @@ class MemoryManager:
                 },
             )
 
-            logger.info(
-                "HINDSIGHT DEBUG: recall returned HTTP %s",
-                resp.status_code,
-            )
-
             if resp.status_code == 404:
-                logger.info(
-                    "HINDSIGHT DEBUG: bank does not exist yet; "
-                    "returning empty history"
-                )
-
-                self.available = True
-
+                # Bank not created yet => nothing remembered
                 return MemorySearchResult(
                     True,
                     [],
@@ -817,8 +751,8 @@ class MemoryManager:
             data = resp.json()
 
         except (MemoryUnavailableError, ValueError) as exc:
-            logger.exception(
-                "HINDSIGHT DEBUG: memory search failed: %s",
+            logger.warning(
+                "Memory search failed: %s",
                 exc,
             )
 
@@ -842,13 +776,7 @@ class MemoryManager:
 
         hits: list[MemoryHit] = []
 
-        logger.info(
-            "HINDSIGHT DEBUG: Hindsight returned %d raw result(s)",
-            len(raw),
-        )
-
         for rank, item in enumerate(raw):
-
             if (
                 not isinstance(item, dict)
                 or not item.get("text")
@@ -867,35 +795,29 @@ class MemoryManager:
             haystack = " ".join(
                 [
                     str(
-                        item.get(
-                            "document_id"
-                        )
+                        item.get("document_id")
                         or ""
                     ),
                     str(
-                        item.get(
-                            "context"
-                        )
+                        item.get("context")
                         or ""
                     ),
                     item["text"],
                 ]
             )
 
-            match = _INC_RE.search(haystack)
-
-            m = (
-                meta.get("incident_id")
-                or (
-                    match.group(0)
-                    if match
-                    else None
-                )
+            m = meta.get("incident_id") or (
+                _INC_RE.search(haystack).group(0)
+                if _INC_RE.search(haystack)
+                else None
             )
 
-            # Hindsight returns ranked results without a portable score,
-            # so relevance is a transparent heuristic:
-            # 15% rank position + 85% keyword overlap.
+            # Hindsight returns ranked results without
+            # a portable score, so relevance is a
+            # transparent heuristic:
+            # 15% rank position +
+            # 85% keyword overlap with the query.
+
             rank_score = (
                 1.0
                 - (
@@ -942,12 +864,6 @@ class MemoryManager:
             reverse=True,
         )[:limit]
 
-        logger.info(
-            "HINDSIGHT DEBUG: memory search succeeded "
-            "hits=%d; setting available=True",
-            len(hits),
-        )
-
         self.available = True
 
         return MemorySearchResult(
@@ -961,7 +877,7 @@ class MemoryManager:
         incident_id: str,
     ) -> dict | None:
 
-        """Structured record + related Hindsight memories."""
+        """Structured record (authoritative) + related Hindsight memories for that incident."""
 
         record = self.repo.get_incident(
             incident_id
@@ -983,16 +899,12 @@ class MemoryManager:
 
         return {
             "incident": (
-                record.model_dump(
-                    mode="json"
-                )
+                record.model_dump(mode="json")
                 if record
                 else None
             ),
             "related_memories": [
-                h.model_dump(
-                    mode="json"
-                )
+                h.model_dump(mode="json")
                 for h in related
             ],
             "memory_available": result.available,
