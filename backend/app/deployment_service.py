@@ -1,4 +1,4 @@
-"""Deployment abstraction: Mock / Render / Vercel providers + correlation + rollback."""
+"""Deployment abstraction: Mock / Vercel providers + correlation + rollback."""
 import logging
 from abc import ABC, abstractmethod
 from datetime import datetime, timedelta
@@ -103,44 +103,6 @@ class MockProvider(DeploymentProvider):
         return {"status": "success", "message": f"[MOCK] Simulated rollback of {dep.version} to {target}. No real infrastructure was touched."}
 
 
-# ---------------------------------------------------------------- render
-class RenderProvider(DeploymentProvider):
-    name = "render"
-    BASE = "https://api.render.com/v1"
-
-    def __init__(self, s: Settings, transport: httpx.AsyncBaseTransport | None = None):
-        if not (s.render_api_key and s.render_service_id):
-            raise DeploymentProviderError("Render is not configured (RENDER_API_KEY / RENDER_SERVICE_ID)")
-        self.s = s
-        self._c = httpx.AsyncClient(base_url=self.BASE, timeout=15, transport=transport,
-                                    headers={"Authorization": f"Bearer {s.render_api_key}", "Accept": "application/json"})
-
-    def _map(self, raw: dict) -> Deployment:
-        raw = raw.get("deploy", raw)
-        commit = raw.get("commit") or {}
-        sha = commit.get("id")
-        return Deployment(
-            deployment_id=raw["id"], version=(sha or raw["id"])[:7], service=self.s.deployment_service_name,
-            environment="production", commit=sha[:7] if sha else None, timestamp=_parse_ts(raw.get("createdAt")),
-            status=raw.get("status", "unknown"), commit_message=(commit.get("message") or "").split("\n")[0] or None,
-            provider="render",
-        )
-
-    async def get_recent_deployments(self, limit: int = 10) -> list[Deployment]:
-        r = await _call(self._c, "GET", f"/services/{self.s.render_service_id}/deploys", params={"limit": limit})
-        return [self._map(x) for x in (r.json() or [])]
-
-    async def get_deployment_details(self, deployment_id: str) -> Deployment | None:
-        r = await _call(self._c, "GET", f"/services/{self.s.render_service_id}/deploys/{deployment_id}")
-        return None if r.status_code == 404 else self._map(r.json())
-
-    async def rollback_deployment(self, deployment_id: str, reason: str) -> dict:
-        r = await _call(self._c, "POST", f"/services/{self.s.render_service_id}/rollback", json={"deployId": deployment_id})
-        if r.status_code == 404:
-            return {"status": "failed", "message": "Render could not find that deploy."}
-        return {"status": "success", "message": "Render accepted the rollback request."}
-
-
 # ---------------------------------------------------------------- vercel
 class VercelProvider(DeploymentProvider):
     name = "vercel"
@@ -208,7 +170,7 @@ class DeploymentService:
     def _select_provider(s: Settings) -> DeploymentProvider:
         if s.mock_deployments:
             return MockProvider()
-        for cls in (RenderProvider, VercelProvider):
+        for cls in (VercelProvider,):
             try:
                 return cls(s)
             except DeploymentProviderError:

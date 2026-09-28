@@ -36,8 +36,6 @@ class Settings(BaseSettings):
     github_repository: str = ""
 
     # deployment providers
-    render_api_key: str = ""
-    render_service_id: str = ""
     vercel_token: str = ""
     vercel_project_id: str = ""
     vercel_team_id: str = ""

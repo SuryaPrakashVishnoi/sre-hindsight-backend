@@ -1,21 +1,21 @@
-# Environment variables
-backend/.env
-
 # Python
-backend/__pycache__/
-backend/**/*.pyc
-backend/.pytest_cache/
-backend/.venv/
-backend/venv/
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+.pytest_cache/
 
-# Data generated locally
-backend/data/incidents.json
-backend/data/rollbacks.json
-backend/data/github_events.json
+# Environment / secrets
+.env
+.env.*
+!.env.example
 
-# IDE
-.vscode/
-.idea/
+# Frontend
+Frontend/node_modules/
+Frontend/dist/
+
+# Logs
+*.log
 
 # OS
 .DS_Store
