@@ -1,0 +1,22 @@
+# Environment variables
+backend/.env
+
+# Python
+backend/__pycache__/
+backend/**/*.pyc
+backend/.pytest_cache/
+backend/.venv/
+backend/venv/
+
+# Data generated locally
+backend/data/incidents.json
+backend/data/rollbacks.json
+backend/data/github_events.json
+
+# IDE
+.vscode/
+.idea/
+
+# OS
+.DS_Store
+Thumbs.db

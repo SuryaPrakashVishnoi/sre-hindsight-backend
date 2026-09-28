@@ -1,0 +1,112 @@
+[
+  {
+    "incident_id": "INC-001",
+    "title": "Classroom Projector Has No Signal",
+    "service": "Classroom Infrastructure",
+    "error": "No Signal",
+    "symptoms": "Projector is powered but laptop display is not appearing.",
+    "impact": "Faculty cannot conduct the presentation",
+    "environment": "production",
+    "severity": "high",
+    "status": "resolved",
+    "root_cause": "Damaged HDMI cable",
+    "resolution": "Replaced HDMI cable",
+    "successful_actions": [
+      {
+        "action": "Replaced HDMI cable",
+        "outcome": "successful",
+        "notes": "Projector started working"
+      }
+    ],
+    "failed_actions": [
+      {
+        "action": "Restarted projector",
+        "outcome": "failed"
+      },
+      {
+        "action": "Restarted laptop",
+        "outcome": "failed"
+      },
+      {
+        "action": "Changed display settings",
+        "outcome": "failed"
+      }
+    ],
+    "engineer_feedback": [
+      {
+        "recommendation": "Check the HDMI cable",
+        "action_taken": "Replaced HDMI cable",
+        "result": "Projector started working",
+        "actual_root_cause": "Damaged HDMI cable",
+        "rating": 5,
+        "useful": true
+      }
+    ],
+    "confidence": 0.9,
+    "timestamp": "2026-08-02T09:15:00Z",
+    "tags": [
+      "service:classroom-infrastructure",
+      "env:production",
+      "demo-seed"
+    ],
+    "infrastructure_component": "Display / AV equipment",
+    "relationships": []
+  },
+  {
+    "incident_id": "INC-104",
+    "title": "Production API Returning 500 Errors",
+    "service": "Authentication API",
+    "error": "500 Internal Server Error",
+    "symptoms": "Login and token refresh requests fail with HTTP 500 shortly after a release.",
+    "impact": "Users cannot sign in",
+    "environment": "production",
+    "severity": "critical",
+    "status": "mitigated",
+    "root_cause": null,
+    "resolution": "Rollback to v1.8.3 stopped the 500 errors. Root cause was not conclusively confirmed.",
+    "successful_actions": [
+      {
+        "action": "Rolled back deployment v1.8.4 to v1.8.3",
+        "outcome": "rollback_executed",
+        "notes": "500 errors stopped after rollback (temporal association only)"
+      }
+    ],
+    "failed_actions": [
+      {
+        "action": "Restarted API pods",
+        "outcome": "failed"
+      },
+      {
+        "action": "Cleared session cache",
+        "outcome": "failed"
+      }
+    ],
+    "deployment": "v1.8.4",
+    "deployment_id": "dep-1084",
+    "commit": "8f72abc",
+    "pull_request": "#142",
+    "deployment_correlation": {
+      "detected": true,
+      "message": "Potential deployment correlation: authentication middleware refactor (PR #142) deployed before the incident. Correlation is not proof of causation."
+    },
+    "confidence": 0.7,
+    "timestamp": "2026-08-14T14:32:00Z",
+    "logs": [
+      "POST /auth/login 500 Internal Server Error"
+    ],
+    "related_incidents": [],
+    "tags": [
+      "service:authentication-api",
+      "env:production",
+      "http:500",
+      "demo-seed"
+    ],
+    "infrastructure_component": "Authentication service",
+    "relationships": [
+      {
+        "type": "possibly_correlated_with_deployment",
+        "target": "v1.8.4"
+      }
+    ]
+  }
+]
